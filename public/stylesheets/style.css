@@ -19,6 +19,8 @@ section {
   min-height: 400px;
 }
 
+
+
 section:first-of-type {
   margin-left: 0;
 }
@@ -38,6 +40,7 @@ section h3 {
 
 .get {
   background: #bec3da;
+  width: 550px;
 }
 
 .update {
