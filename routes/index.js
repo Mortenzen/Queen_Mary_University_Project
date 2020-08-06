@@ -2,196 +2,188 @@ var express = require('express');
 var router = express.Router();
 var mongo = require('mongodb').MongoClient;
 var objectId = require('mongodb').ObjectID;
-var assert = require('assert');
 var bcrypt = require('bcrypt');
+var mongoose = require('mongoose');
+var jwt = require('jsonwebtoken');
 
-var url = 'mongodb://localhost:27017/test';
+const User = require('../models/user');
 
-// HOME PAGE
+
+/*=================================================
+//                   HOME PAGE
+===================================================*/
 router.get('/', function(req, res, next) {
   res.render('index');
 });
 
-// LISTING DATA FROM THE DATABASE ON THE HTML PAGE
-router.get('/get-data', function(req, res, next) {
-  var resultArray = [];
-  mongo.connect(url, function(err, db) {
-    assert.equal(null, err);
-    var cursor = db.collection('user-data').find();
-    cursor.forEach(function(doc, err) {
-      assert.equal(null, err);
-      resultArray.push(doc);
-    }, function() {
-      db.close();
-      res.render('index', {items: resultArray});
+
+/*=================================================
+// READ DATA INTO THE HTLM SITE (mongoose)
+===================================================*/
+router.get('/get-data', function(req, res) {
+  User.find({}, function(err, users) {
+    var userMap = {};
+
+    users.forEach(function(user) {
+      userMap[user._id] = user;
     });
+
+    res.render('index', {items: userMap});
+    //console.log('Items listed: \n', userMap );
   });
 });
 
-// INSERTING NEW USERS ON THE HTML PAGE
-router.post('/insert', function(req, res, next) {
+
+/*=================================================
+// INSERTING NEW USERS ON THE HTML PAGE (mongoose)
+===================================================*/
+router.post("/insert", (req, res, next) => {
+
+  // BCRYPT VALUE
   const saltRounds = 10;
-  var item = {
+
+  // NEW USER MONGOOSE MODEL
+  const user = new User({
+    _id: new mongoose.Types.ObjectId(),
     name: req.body.name,
     email: req.body.email,
     hash: req.body.password,
     location: "base"
-  };
+  });
 
   // PASSWORD HASHING
-  bcrypt.hash(item.hash, saltRounds).then(function(hash) {
-    item.hash=hash;
-    mongo.connect(url, function(err, db) {
-      assert.equal(null, err);
-      console.log(item);
-      db.collection('user-data').insertOne(item, function(err, result) {
-        assert.equal(null, err);
-        console.log('Item inserted');
-        db.close();
+  bcrypt.hash(req.body.password, saltRounds).then(function(hash) {
+    user.hash = hash;
+
+    user
+    .save()
+    .then(result => {
+      console.log('The following item is inserted: \n', result);
+      res.status(200).send();
+    })
+    .catch(err => {
+      console.log(err);
+      res.status(500).json({
+        error: err
       });
     });
   });
   res.redirect('/');
 });
 
-// UPDATE USER ON THE HTML PAGE
-router.post('/update', function(req, res, next) {
-  var item = {
-    name: req.body.title,
-    email: req.body.content,
-    hash: req.body.author
-  };
-  var id = req.body.id;
 
-  mongo.connect(url, function(err, db) {
-    assert.equal(null, err);
-    db.collection('user-data').updateOne({"_id": objectId(id)}, {$set: item}, function(err, result) {
-      assert.equal(null, err);
-      console.log('Item updated');
-      db.close();
-    });
-  });
-});
-
-// DELETE USER BY ID ON THE HTLM PAGE
+/*=================================================
+// DELETING USERS BY ID ON THE HTML PAGE (mongoose)
+===================================================*/
 router.post('/delete', function(req, res, next) {
   var id = req.body.id;
 
-  mongo.connect(url, function(err, db) {
-    assert.equal(null, err);
-    db.collection('user-data').deleteOne({"_id": objectId(id)}, function(err, result) {
-      assert.equal(null, err);
-      console.log('Item deleted');
-      db.close();
-    });
+  User.deleteOne({"_id": objectId(id)}, function(err, result) {
+    console.log('Item deleted');
   });
+  res.redirect('/');
 });
 
 
-/*
-router.post('/signup', function(req, res) {
-var item = {
-name: req.body.name,
-email: req.body.email,
-hash: req.body.password
-};
-
-mongo.connect(url, function(err, db) {
-assert.equal(null, err);
-db.collection('user-data').insertOne(item, function(err, result) {
-assert.equal(null, err);
-console.log('Item inserted');
-db.close();
-});
-});
-});
-*/
-
-// LOGIN WITH EMAIL AND PASSWORD ON PHONE
+/*=================================================
+// LOGIN BY EMAIL AND PASSWORD ON PHONE (mongoose)
+===================================================*/
 router.post('/login', function(req, res) {
-  var item = {
-    email: req.body.email,
-  };
+  const user = new User({
+    email: req.body.email
+  });
 
-  mongo.connect(url, function(err, db) {
-    assert.equal(null, err);
-    db.collection('user-data').findOne(item, function(err, result) {
+  User.findOne(user, function(err, result) {
 
-      //IF EMAIL FOUND
-      if(result != null){
+    if(result != null){ // IF EMAIL FOUND
+      bcrypt.compare(req.body.password, result.hash).then(function(result) {
+        if(result) {      // CORRECT PASSWORD
 
-        bcrypt.compare(req.body.password, result.hash).then(function(result) {
-          if(result) { //CORRECT PASSWORD
-            const objToSend = {
-              name: result.name,
-              email: result.email
-            };
-            assert.equal(null, err);
-            res.status(200).send(JSON.stringify(objToSend));
-            console.log('success');
-            db.close();
-          } else { //INCORRECT PASSWORD
-            assert.equal(null, err);
-            res.status(400).send();
-            console.log('failed');
-            db.close();
+          const token = jwt.sign({user}, 'my_secret_key');
+          const objToSend = {
+            name: result.name,
+            email: result.email,
+            token: token
           };
-        });
 
-      } else { //NO EMAIL FOUND
-        assert.equal(null, err);
-        res.status(400).send();
-        console.log('no email found');
-        db.close();
-      };
-    });
+          res.status(200).send(JSON.stringify(objToSend));
+          console.log(objToSend);
+          console.log('success');
+        } else {          // INCORRECT PASSWORD
+          res.status(400).send();
+          console.log('failed');
+        };
+      });
+    } else { // IF NO EMAIL FOUND
+      res.status(400).send();
+      console.log('no email found');
+    };
   });
 });
 
 
-// LOGIN WITH EMAIL AND PASSWORD ON PHONE
-router.post('/tag', function(req, res) {
+/*=================================================
+// TAG WRITING ON PHONE (mongoose)
+===================================================*/
+router.post('/tag', ensureToken, function(req, res) {
+  const user = new User({
+    location: req.body.location
+  });
+
+  var email = req.body.email;
+  var userEmail = req.user;
+  var jwtEmail = userEmail.user.email;
+console.log(email + " compared to " + jwtEmail);
 
 
-  var item = {
+  if (jwtEmail == email){
+  User.updateOne({"email": req.body.email}, {$set: user}, function(err, result) {
+    console.log('Item updated ' + user.location);
+    res.status(200).send();
+  });
+} else {
+  console.log("Email authentication failed...")
+  res.status(403).send();
+}
+});
+
+/*=================================================
+// USER UPDATE ON HTML PAGE (mongoose)
+===================================================*/
+router.post('/update', (req, res, next) => {
+
+  id = req.body.id;
+  const saltRounds = 10;
+  const user = new User({
+    name: req.body.name,
     email: req.body.email,
-  };
+    hash: req.body.password,
+    location: "base"
+  });
 
-  var item2 = {
-    location: req.body.location,
-  };
+  // PASSWORD HASHING
+  bcrypt.hash(req.body.password, saltRounds).then(function(hash) {
+    user.hash = hash;
 
-  mongo.connect(url, function(err, db) {
-    assert.equal(null, err);
-    db.collection('user-data').findOne(item, function(err, result) {
-
-      //IF EMAIL FOUND
-      if(result != null){
-
-        mongo.connect(url, function(err, db) {
-          assert.equal(null, err);
-          db.collection('user-data').updateOne({"email": item.email}, {$set: item2}, function(err, result) {
-            assert.equal(null, err);
-            console.log('Item updated');
-            db.close();
-          });
-        });
-
-        assert.equal(null, err);
-        res.status(200).send();
-        console.log('success');
-
-
-      } else { //NO EMAIL FOUND
-        assert.equal(null, err);
-        res.status(400).send();
-        console.log('no email found');
-        db.close();
-      };
+    User.updateOne({"_id": objectId(id)}, {$set: user}, function(err, result) {
+      console.log('Item updated');
     });
   });
+  res.redirect('/');
 });
 
+// function
+function ensureToken(req, res, next) {
+  const authHeader = req.headers["authorization"];
+  const token = authHeader && authHeader.split('.')[1];
+   if (token == null) res.status(401).send();
 
+    jwt.verify(authHeader, 'my_secret_key', (err, user) => {
+      if(err) return  res.status(403).send();
+      req.user = user;
+      //var lol = user.user.email;
+      next();
+    });
+}
 
 module.exports = router;
