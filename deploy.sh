@@ -18,4 +18,4 @@ git pull
 
 docker-compose -f docker-compose-mongo.yml up -d
 docker-compose -f docker-compose.yml build
-docker-compose -f docker-compose-mongo.yml -f docker-compose.yml up -d --force-recreate
+docker-compose -f docker-compose.yml up -d --force-recreate
