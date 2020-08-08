@@ -1,0 +1,23 @@
+version: "3.1"
+
+services:
+  backend:
+    build: ../QMUL_Backend
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks:
+      - qmul
+    restart: "always"
+
+  frontend:
+    build: ../QMUL_Frontend
+    ports:
+      - "127.0.0.1:3001:3000"
+    depends_on:
+      - backend
+    networks:
+      - qmul
+    restart: "always"
+
+networks:
+  qmul:
